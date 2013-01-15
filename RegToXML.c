@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 /*  Should be using this instead of the same method of finding the file name at every IO stage
 *   However, to do so, I'd need to malloc and free stuff, which I don't want to deal with.
@@ -148,37 +149,94 @@ int writeToXML(char *cceID, char *regKey, char *regValue, char *regData, char *d
 void checkData(char *regData)
 {
     char *deleteWord;
+    int value;
 
     deleteWord = "*DELETE*";
+    value = 0;
 
     switch(regData[0])
     {
-        case '-':   //Replaces "-" with "*DELETE*"
-            strcpy(regData, deleteWord);
-            break;
-        default:
-            break;
-    }
-}
-
-/* Converts reg types to their "real" values */
-void regTypeConversion(char *dataType)
-{
-    char *dword;
-
-    dword = "REG_DWORD";
-
-    switch(dataType[0])
-    {
-    case 'd':   //Currently only have to deal with dword
-        strcpy(dataType, dword);
+    case '-':   //Replaces "-" with "*DELETE*"
+        strcpy(regData, deleteWord);
+        break;
+    case '0':   //Gets hex value, converts to int, replaces
+        sscanf(regData, "%x", &value);
+        sprintf(regData, "%d", value);
         break;
     default:
         break;
     }
 }
 
-int main(int argc, char **argv)
+void convertBinaryToDecimal(char *data)
+{
+    char decimal[300];
+    int counter;
+    int power;
+    int currentValue;
+    int returnValue;
+
+    counter = 0;
+    currentValue = 0;
+    returnValue = 0;
+    memset(decimal, 0, sizeof(decimal) / sizeof(decimal[0]));
+
+    while(data[counter] != 0 || data[counter] != '\0')
+        counter++;
+
+    power = counter - 1;
+
+    for(int i = 0; i < counter; i++)
+    {
+        currentValue = data[i] - 48;
+
+        returnValue += currentValue * (int)pow((power - i), 2);
+    }
+
+    sprintf(data, "%d", returnValue);
+}
+
+/* Converts reg types to their "real" values */
+int regTypeConversion(char *dataType)
+{
+    char *dword;
+    char *binary;
+    char *multisz;
+
+    int returnCase;
+
+    dword = "REG_DWORD";
+    binary = "REG_BINARY";
+    multisz = "REG_MULTI_SZ";
+
+    returnCase = 0;
+
+    switch(dataType[0])
+    {
+    case 'd':   //Currently only have to deal with dword
+        strcpy(dataType, dword);
+        returnCase = 1;
+        break;
+    case 'h':
+        if(dataType[4] == 7 || dataType[12])
+        {
+            strcpy(dataType, multisz);
+            returnCase = 3;
+        }
+        else
+        {
+            strcpy(dataType, binary);
+            returnCase = 2;
+        }
+        break;
+    default:
+        break;
+    }
+
+    return returnCase;
+}
+
+int parseFile(int argc, char **argv)
 {
     FILE *filePtr;
 
@@ -235,7 +293,7 @@ int main(int argc, char **argv)
             else if(strstr(buffer, tagValue))
             {
                 //If the key is not of type REG_SZ
-                if(strstr(buffer, ":"))
+                if(strstr(buffer, "=dword:") || strstr(buffer, "=hex:") || strstr(buffer, "=hex(2):") || strstr(buffer, "=hex(2):"))
                 {
                     char *typePointer;
                     char *dataPointer;
@@ -249,10 +307,10 @@ int main(int argc, char **argv)
 
                     //Convert the type to proper type
                     typePointer = (char *)&typeName;
-                    regTypeConversion(typePointer);
-
-                    //Check to see if the data matches any values we need to change (- > *DELETE*, for example)
                     dataPointer = (char *)&data;
+                    regTypeConversion(typePointer);
+                    //    convertBinaryToDecimal(dataPointer);
+                    //else
                     checkData(dataPointer);
 
                     //Writes to the file with the current CCEID and key.
@@ -268,7 +326,7 @@ int main(int argc, char **argv)
                     memset(data, 0, sizeof(data) / sizeof(data[0]));
                     memset(typeName, 0, sizeof(typeName) / sizeof(typeName[0]));
 
-                    sscanf(buffer, "\"%[^\"=]\"=%s", valueName, data);
+                    sscanf(buffer, "\"%[^\"=]\"=\"%[^\"]\"", valueName, data);
 
                     dataPointer = (char *)&data;
                     checkData(dataPointer);
@@ -290,7 +348,10 @@ int main(int argc, char **argv)
     else
         printf("Could not find file.\n");
 
+    return 1;
+}
 
-
-    return 0;
+int main(int argc, char **argv)
+{
+    parseFile(argc, argv);
 }
